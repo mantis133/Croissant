@@ -1,0 +1,16 @@
+[package]
+name = "croissant"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+crossterm = ["dep:crossterm"]
+logging = ["dep:tracing", "dep:tracing-subscriber", "dep:tracing-appender"]
+
+[dependencies]
+futures = "0.3.32"
+tokio = { version = "1.52.3", features = ["full"] }
+crossterm = { version = "0.29", optional = true, features = ["event-stream"] }
+tracing = { version = "0.1.44", optional = true }
+tracing-subscriber = { version = "0.3.23", optional = true }
+tracing-appender = { version = "0.2.5", optional = true }
