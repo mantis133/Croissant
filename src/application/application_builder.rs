@@ -2,7 +2,9 @@ use std::{any::{Any, TypeId}, collections::HashMap};
 use futures::Stream;
 #[cfg(feature = "logging")]
 use tracing::Level;
+#[cfg(feature = "tracing")]
 use tracing::info;
+#[cfg(feature = "tracing")]
 use tracing_subscriber::fmt;
 
 use crate::{
@@ -20,8 +22,8 @@ use crate::{
 pub struct ApplicationBuilder<State> {
     pub(super) state: State,
     pub(super) starting_activity: Option<Box<dyn ActivityState>>,
-    pub(super) activities: HashMap<TypeId, Box<dyn AnyActivity>>,
-    pub(super) event_handlers: HashMap<TypeId, Box<dyn FnMut(&mut State, &dyn ApplicationEvent) -> EventHandlerReturn<Box<dyn ApplicationEvent>>>>,
+    pub(super) activities: HashMap<TypeId, Box<dyn AnyActivity<State>>>,
+    pub(super) event_handlers: HashMap<TypeId, Box<dyn FnMut(&mut State, &dyn ApplicationEvent) -> EventHandlerReturn>>,
     pub(super) event_producers: Vec<EventStream<Box<dyn ApplicationEvent>>>,
     pub(super) post_event: Option<Box<dyn FnMut(&mut State, &dyn ApplicationEvent)>>,
     pub(super) has_backstack: bool,
@@ -47,7 +49,7 @@ where
 
     pub fn on_event<F, E: ApplicationEvent>(mut self, mut handler: F) -> Self
     where
-        F: FnMut(&mut State, &E) -> EventHandlerReturn<Box<dyn ApplicationEvent>> + Send + 'static,
+        F: FnMut(&mut State, &E) -> EventHandlerReturn + Send + 'static,
     {
         self.event_handlers.insert(TypeId::of::<E>(), Box::new(move |state, event| {
             // Trait upcasting (stable since Rust 1.76)
@@ -85,6 +87,7 @@ where
         if self.starting_activity.is_none() {
             panic!("Starting activity must be set before building the application.");
         }
+        #[cfg(feature = "tracing")]
         if self.log_file.is_some() {
             let file_appender = tracing_appender::rolling::never("./logs", self.log_file.unwrap());
             let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);

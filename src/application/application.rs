@@ -1,5 +1,6 @@
 use std::{any::TypeId, collections::HashMap};
 
+#[cfg(feature = "tracing")]
 use tracing::info;
 
 use crate::{
@@ -23,9 +24,9 @@ use std::any::Any;
 pub struct Application<State> {
     pub(super) state: State,
     pub(super) active_activity: Box<dyn ActivityState>,
-    pub(super) activities: HashMap<TypeId, Box<dyn AnyActivity>>,
+    pub(super) activities: HashMap<TypeId, Box<dyn AnyActivity<State>>>,
     pub(super) events: futures::stream::SelectAll<EventStream<Box<dyn ApplicationEvent>>>,
-    pub(super) event_handlers: HashMap<TypeId, Box<dyn FnMut(&mut State, &dyn ApplicationEvent) -> EventHandlerReturn<Box<dyn ApplicationEvent>>>>,
+    pub(super) event_handlers: HashMap<TypeId, Box<dyn FnMut(&mut State, &dyn ApplicationEvent) -> EventHandlerReturn>>,
     pub(super) post_event: Option<Box<dyn FnMut(&mut State, &dyn ApplicationEvent)>>,
     pub(super) backstack: Option<Vec<Box<dyn ActivityState>>>,
 }
@@ -55,16 +56,16 @@ where
         &mut self.state
     }
 
-    pub fn set_global_value(&mut self, key: &str, value: Box<dyn Any>) {
+    pub fn set_global_value(&mut self, _key: &str, _value: Box<dyn Any>) {
         // Implement your logic to set a value in the state
     }
 
-    pub fn get_global_value(&self, key: &str) -> Option<&Box<dyn Any>> {
+    pub fn get_global_value(&self, _key: &str) -> Option<&Box<dyn Any>> {
         // Implement your logic to get a value from the state
         None
     }
 
-    pub fn get_global_value_mut(&mut self, key: &str) -> Option<&mut Box<dyn Any>> {
+    pub fn get_global_value_mut(&mut self, _key: &str) -> Option<&mut Box<dyn Any>> {
         // Implement your logic to get a mutable value from the state
         None
     }
@@ -74,6 +75,9 @@ where
 
 
         // on Resume for the starting activity
+        if let Some(activity) = self.activities.get_mut(&(self.active_activity.as_ref() as &dyn Any).type_id()) {
+            activity.on_resume(self.active_activity.as_mut(), &mut self.state);
+        }
 
 
         // Event loop
@@ -97,16 +101,14 @@ where
             
             // Handle activity-level event handlers
             if let Some(activity) = activities.get_mut(&activity_type_id) {
-                let ret = activity.handle_event(active_activity.as_mut(), current_event.unwrap());
+                let ret = activity.handle_event(active_activity.as_mut(), current_event.unwrap(), &mut self.state);
                 // handle return...
-                println!("Activity event handler return: {:?}", ret);
+                #[cfg(feature = "tracing")]
                 info!("Activity event handler return: {:?}", ret);
                 if ret.exit {
-                    println!("Exiting application due to activity event handler return.");
                     break;
                 }
-                if ret.event.is_none() {
-                    println!("Activity event handler returned None event, discarding event.");
+                if ret.consumed {
                     current_event = None;
                 }
                 pagination = ret.pagination;
@@ -120,7 +122,6 @@ where
                 if let Some(handler) = self.event_handlers.get_mut(&event_type_id) {
                     let ret = handler(&mut self.state, event);
                     // handle return...
-                    println!("Event handler return: {:?}", ret);
                     if ret.exit {
                         println!("Exiting application due to event handler return.");
                         break;
@@ -129,29 +130,35 @@ where
                 }
             }
 
+            // activity-level post_event handler
+            if let Some(activity) = activities.get_mut(&activity_type_id) {
+                activity.post_event(active_activity.as_mut(), event_ref, &mut self.state);
+            }
+
+            // application-level post_event handler
             self.post_event.as_mut().map(|handler| handler(&mut self.state, event_ref));
 
             // Handle pagination
             match pagination {
                 Pagination::None => {},
                 Pagination::Push(new_activity) => {
-                    activities.get_mut(&activity_type_id).map(|activity| activity.on_pause(active_activity.as_mut()));
+                    activities.get_mut(&activity_type_id).map(|activity| activity.on_pause(active_activity.as_mut(), &mut self.state));
                     let old_activity = std::mem::replace(&mut self.active_activity, new_activity);
                     if let Some(backstack) = self.backstack.as_mut() {
                         backstack.push(old_activity);
                     }
                     let activity_type_id = (self.active_activity.as_ref() as &dyn Any).type_id();
                     let active_activity = &mut self.active_activity;
-                    activities.get_mut(&activity_type_id).map(|activity| activity.on_resume(active_activity.as_mut()));
+                    activities.get_mut(&activity_type_id).map(|activity| activity.on_resume(active_activity.as_mut(), &mut self.state));
                 }
                 Pagination::Pop => {
                     if let Some(backstack) = self.backstack.as_mut() {
                         if let Some(old_activity) = backstack.pop() {
-                            activities.get_mut(&activity_type_id).map(|activity| activity.on_pause(active_activity.as_mut()));
+                            activities.get_mut(&activity_type_id).map(|activity| activity.on_pause(active_activity.as_mut(), &mut self.state));
                             self.active_activity = old_activity;
                             let activity_type_id = (self.active_activity.as_ref() as &dyn Any).type_id();
                             let active_activity = &mut self.active_activity;
-                            activities.get_mut(&activity_type_id).map(|activity| activity.on_resume(active_activity.as_mut()));
+                            activities.get_mut(&activity_type_id).map(|activity| activity.on_resume(active_activity.as_mut(), &mut self.state));
                         } else {
                             println!("Backstack is empty, cannot pop activity.");
                         }
@@ -160,11 +167,11 @@ where
                     }
                 }
                 Pagination::Replace(new_activity) => {
-                    activities.get_mut(&activity_type_id).map(|activity| activity.on_pause(active_activity.as_mut()));
+                    activities.get_mut(&activity_type_id).map(|activity| activity.on_pause(active_activity.as_mut(), &mut self.state));
                     self.active_activity = new_activity;
                     let activity_type_id = (self.active_activity.as_ref() as &dyn Any).type_id();
                     let active_activity = &mut self.active_activity;
-                    activities.get_mut(&activity_type_id).map(|activity| activity.on_resume(active_activity.as_mut()));
+                    activities.get_mut(&activity_type_id).map(|activity| activity.on_resume(active_activity.as_mut(), &mut self.state));
                 }
             }
 
@@ -175,7 +182,7 @@ where
         let active_activity = &mut self.active_activity;
         let activities = &mut self.activities;
         if let Some(activity) = activities.get_mut(&activity_type_id) {
-            activity.on_pause(active_activity.as_mut());
+            activity.on_pause(active_activity.as_mut(), &mut self.state);
         }
 
         // on Destroy for all activities

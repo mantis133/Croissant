@@ -9,8 +9,8 @@ pub enum Pagination {
 }
 
 #[derive(Debug)]
-pub struct EventHandlerReturn<EventType> {
-    pub event: Option<EventType>,
+pub struct EventHandlerReturn {
+    pub consumed: bool,
     pub pagination: Pagination,
     pub exit: bool,
 }
