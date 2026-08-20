@@ -7,11 +7,24 @@ use tokio::time::{self, Instant};
 ///
 /// The mapping function receives the `Instant` of each tick and returns `Some(AppEvent)` to emit
 /// it or `None` to skip it.
-/// 
-/// ```
-/// .add_event_producer(croissant::streams::timer_event_stream(Duration::from_secs(30), |_instant| {
-///     Some(Box::new(TimerTick{}) as Box<dyn ApplicationEvent>)
-/// }))
+///
+/// ```no_run
+/// # use std::time::Duration;
+/// # use croissant::{activities::{ActivityBuilder, ActivityState}, application::Application, events::ApplicationEvent};
+/// # #[derive(Debug)] struct Home;
+/// # impl ActivityState for Home {}
+/// #[derive(Debug)]
+/// struct TimerTick;
+/// impl ApplicationEvent for TimerTick {}
+///
+/// let app = Application::builder()
+///     .add_activity(ActivityBuilder::<Home>::new().build())
+///     .starting_activity(Home)
+///     .add_event_producer(croissant::streams::timer_event_stream(
+///         Duration::from_secs(30),
+///         |_instant| Some(Box::new(TimerTick) as Box<dyn ApplicationEvent>),
+///     ))
+///     .build();
 /// ```
 pub fn timer_event_stream<AppEvent, F>(interval: Duration, f: F) -> impl Stream<Item = AppEvent>
 where

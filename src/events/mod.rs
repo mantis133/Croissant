@@ -1,6 +1,5 @@
-mod event_handler_return;
 mod application_event;
+mod event_handler_return;
 
-
-pub use event_handler_return::{EventHandlerReturn, Pagination};
 pub use application_event::ApplicationEvent;
+pub use event_handler_return::EventHandlerReturn;

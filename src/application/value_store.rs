@@ -1,0 +1,121 @@
+use std::any::{Any, type_name};
+use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+
+/// A map of named, type-erased values shared by every activity in the application.
+///
+/// Values are stored as `Box<dyn Any + Send>` and recovered by downcasting, so a single
+/// store can hold any mix of types. Reads are keyed by name *and* type: asking for the
+/// wrong type reads as a miss rather than a panic.
+///
+/// ```
+/// # use croissant::application::ValueStore;
+/// let mut store = ValueStore::new();
+/// store.set("counter", 0u32);
+///
+/// *store.get_mut::<u32>("counter").unwrap() += 1;
+///
+/// assert_eq!(store.get::<u32>("counter"), Some(&1));
+/// assert_eq!(store.get::<String>("counter"), None); // right name, wrong type
+/// ```
+#[derive(Default)]
+pub struct ValueStore {
+    values: HashMap<String, Box<dyn Any + Send>>,
+}
+
+impl ValueStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Stores `value` under `key`, replacing whatever was there before.
+    pub fn set<T: Any + Send>(&mut self, key: impl Into<String>, value: T) {
+        self.values.insert(key.into(), Box::new(value));
+    }
+
+    /// Borrows the value at `key`, or `None` if it is absent or not a `T`.
+    pub fn get<T: Any + Send>(&self, key: &str) -> Option<&T> {
+        self.values.get(key)?.downcast_ref::<T>()
+    }
+
+    /// Mutably borrows the value at `key`, or `None` if it is absent or not a `T`.
+    pub fn get_mut<T: Any + Send>(&mut self, key: &str) -> Option<&mut T> {
+        self.values.get_mut(key)?.downcast_mut::<T>()
+    }
+
+    /// Mutably borrows the value at `key`, inserting `f()` first if it is absent.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `key` already holds a value of some other type. Overwriting it would
+    /// silently discard data another activity is relying on, so the collision is loud.
+    pub fn get_or_insert_with<T, F>(&mut self, key: impl Into<String>, f: F) -> &mut T
+    where
+        T: Any + Send,
+        F: FnOnce() -> T,
+    {
+        let key = key.into();
+        match self.values.entry(key) {
+            Entry::Occupied(entry) => entry.into_mut().downcast_mut::<T>().unwrap_or_else(|| {
+                panic!(
+                    "value store key is already held by a different type: expected `{}`",
+                    type_name::<T>()
+                )
+            }),
+            Entry::Vacant(entry) => entry
+                .insert(Box::new(f()))
+                .downcast_mut::<T>()
+                .expect("just-inserted value is a T"),
+        }
+    }
+
+    /// Removes the value at `key` and returns it, if it is present and is a `T`.
+    ///
+    /// A type mismatch leaves the value in place.
+    pub fn take<T: Any + Send>(&mut self, key: &str) -> Option<T> {
+        if !self.values.get(key)?.is::<T>() {
+            return None;
+        }
+        let boxed = self.values.remove(key)?;
+        boxed.downcast::<T>().ok().map(|value| *value)
+    }
+
+    /// Removes the value at `key` regardless of its type. Returns whether one was there.
+    pub fn remove(&mut self, key: &str) -> bool {
+        self.values.remove(key).is_some()
+    }
+
+    /// Whether `key` holds a value of any type.
+    pub fn contains(&self, key: &str) -> bool {
+        self.values.contains_key(key)
+    }
+
+    /// Whether `key` holds a value that is a `T`.
+    pub fn contains_type<T: Any + Send>(&self, key: &str) -> bool {
+        self.values.get(key).is_some_and(|value| value.is::<T>())
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &str> {
+        self.values.keys().map(String::as_str)
+    }
+
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.values.clear();
+    }
+}
+
+impl std::fmt::Debug for ValueStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ValueStore")
+            .field("keys", &self.values.keys().collect::<Vec<_>>())
+            .finish()
+    }
+}
