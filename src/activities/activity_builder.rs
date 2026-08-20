@@ -17,7 +17,7 @@ use crate::{
 ///
 /// ```no_run
 /// # use croissant::{activities::{ActivityBuilder, ActivityState}, application::AppHandle, events::{ApplicationEvent, EventHandlerReturn}};
-/// #[derive(Debug)]
+/// #[derive(Debug, Default)]
 /// struct Menu { cursor: usize }
 /// impl ActivityState for Menu {}
 ///

@@ -1,5 +1,6 @@
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use futures::Stream;
 #[cfg(feature = "logging")]
@@ -11,7 +12,7 @@ use crate::{
     EventStream,
     activities::{Activity, ActivityState, AnyActivity},
     application::{
-        AppHandle, Application,
+        AppHandle, Application, ServiceRegistry,
         application::{AppEventHandler, AppPostEventHandler},
         value_store::ValueStore,
     },
@@ -22,17 +23,18 @@ use crate::{
 ///
 /// ```no_run
 /// # use croissant::{activities::{ActivityBuilder, ActivityState}, application::Application};
-/// # #[derive(Debug)] struct Home;
+/// # #[derive(Debug, Default)] struct Home;
 /// # impl ActivityState for Home {}
 /// let app = Application::builder()
 ///     .value("counter", 0u32)
 ///     .add_activity(ActivityBuilder::<Home>::new().build())
-///     .starting_activity(Home)
+///     .starting_activity::<Home>()
 ///     .backstack()
 ///     .build();
 /// ```
 pub struct ApplicationBuilder {
     pub(super) store: ValueStore,
+    pub(super) services: ServiceRegistry,
     pub(super) starting_activity: Option<Box<dyn ActivityState>>,
     pub(super) activities: HashMap<TypeId, Box<dyn AnyActivity>>,
     pub(super) event_handlers: HashMap<TypeId, AppEventHandler>,
@@ -46,6 +48,7 @@ impl ApplicationBuilder {
     pub fn new() -> Self {
         ApplicationBuilder {
             store: ValueStore::new(),
+            services: ServiceRegistry::new(),
             starting_activity: None,
             activities: HashMap::new(),
             event_handlers: HashMap::new(),
@@ -110,8 +113,56 @@ impl ApplicationBuilder {
         self
     }
 
-    pub fn starting_activity<A: ActivityState>(mut self, activity: A) -> Self {
+    /// Sets the activity the application opens on. It is default-constructed and receives
+    /// `on_create` before `on_resume`.
+    pub fn starting_activity<A: ActivityState + Default>(self) -> Self {
+        self.starting_activity_with(A::default())
+    }
+
+    /// [`ApplicationBuilder::starting_activity`] with an instance you construct yourself.
+    pub fn starting_activity_with<A: ActivityState>(mut self, activity: A) -> Self {
         self.starting_activity = Some(Box::new(activity));
+        self
+    }
+
+    /// Registers a service resolvable by `#[inject]` fields of type `Injected<T>`.
+    ///
+    /// Name `T` explicitly to register behind a trait — the turbofish is what coerces
+    /// `Arc<Concrete>` to `Arc<dyn Trait>`, and registering behind a trait is what lets a
+    /// test swap in a fake:
+    ///
+    /// ```
+    /// # use std::sync::Arc;
+    /// # use croissant::{activities::{ActivityBuilder, ActivityState}, application::Application};
+    /// # #[derive(Debug, Default)] struct Home;
+    /// # impl ActivityState for Home {}
+    /// trait Clock: Send + Sync {
+    ///     fn now(&self) -> u64;
+    /// }
+    /// # struct SystemClock;
+    /// # impl Clock for SystemClock { fn now(&self) -> u64 { 0 } }
+    ///
+    /// Application::builder()
+    ///     .service::<dyn Clock>(Arc::new(SystemClock))
+    ///     .add_activity(ActivityBuilder::<Home>::new().build())
+    ///     .starting_activity::<Home>()
+    ///     .build();
+    /// ```
+    pub fn service<T>(mut self, service: Arc<T>) -> Self
+    where
+        T: ?Sized + Send + Sync + 'static,
+    {
+        self.services.register::<T>(None, service);
+        self
+    }
+
+    /// [`ApplicationBuilder::service`] under a qualifier, so one type can have several
+    /// registrations told apart by `#[inject("qualifier")]`.
+    pub fn service_named<T>(mut self, qualifier: &'static str, service: Arc<T>) -> Self
+    where
+        T: ?Sized + Send + Sync + 'static,
+    {
+        self.services.register::<T>(Some(qualifier), service);
         self
     }
 
@@ -148,6 +199,7 @@ impl ApplicationBuilder {
 
         Application {
             handle: AppHandle::new(self.store),
+            services: self.services,
             active_activity: starting_activity,
             activities: self.activities,
             events: futures::stream::select_all(self.event_producers),

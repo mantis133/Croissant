@@ -7,7 +7,9 @@ use tracing::info;
 use crate::{
     EventStream,
     activities::{ActivityState, AnyActivity},
-    application::{AppHandle, ApplicationBuilder, command::Command, value_store::ValueStore},
+    application::{
+        AppHandle, ApplicationBuilder, ServiceRegistry, command::Command, value_store::ValueStore,
+    },
     events::{ApplicationEvent, EventHandlerReturn},
 };
 
@@ -24,6 +26,7 @@ pub(super) type AppPostEventHandler = Box<dyn FnMut(&dyn ApplicationEvent, &mut 
 /// allowed to touch live in their own field and are borrowed disjointly from the registry.
 pub struct Application {
     pub(super) handle: AppHandle,
+    pub(super) services: ServiceRegistry,
     pub(super) active_activity: Box<dyn ActivityState>,
     pub(super) activities: HashMap<TypeId, Box<dyn AnyActivity>>,
     pub(super) events: futures::stream::SelectAll<EventStream<Box<dyn ApplicationEvent>>>,
@@ -53,12 +56,18 @@ impl Application {
         self.handle.values_mut()
     }
 
+    /// The application's registered services.
+    pub fn services(&self) -> &ServiceRegistry {
+        &self.services
+    }
+
     /// Runs the event loop until an activity or handler calls
     /// [`AppHandle::exit`], or until every event producer is exhausted.
     pub async fn run(&mut self) {
         self.handle.exiting = false;
 
-        // on_resume for the starting activity.
+        // on_create then on_resume for the starting activity.
+        self.create_active();
         self.resume_active();
         self.drain_commands();
 
@@ -77,11 +86,13 @@ impl Application {
             self.drain_commands();
         }
 
-        // on_pause for whatever was active when the loop stopped.
+        // Tear down whatever was active when the loop stopped, then unwind the backstack
+        // from the top so activities are destroyed in the reverse of their creation order.
         self.pause_active();
-
-        // on_destroy for all activities is still unimplemented, as it was before this
-        // refactor — there is no per-instance registry to destroy against yet.
+        self.destroy_active();
+        while let Some(activity) = self.backstack.as_mut().and_then(Vec::pop) {
+            self.destroy(activity);
+        }
     }
 
     /// Runs one event past the activity handler, the application handler, and both
@@ -91,13 +102,15 @@ impl Application {
         let activity_type_id = self.active_activity_type_id();
 
         // Activity-level handler for this event type.
-        let mut consumed = false;
-        if let Some(activity) = self.activities.get_mut(&activity_type_id) {
-            let ret = activity.handle_event(self.active_activity.as_mut(), event, &mut self.handle);
+        let consumed = self.with_globals(|app| {
+            let Some(activity) = app.activities.get_mut(&activity_type_id) else {
+                return false;
+            };
+            let ret = activity.handle_event(app.active_activity.as_mut(), event, &mut app.handle);
             #[cfg(feature = "logging")]
             info!("activity event handler returned {ret:?}");
-            consumed = ret.is_consumed();
-        }
+            ret.is_consumed()
+        });
 
         // Background task handlers.
         // TODO: Implement background tasks
@@ -113,9 +126,11 @@ impl Application {
         }
 
         // Post-event hooks see every event, consumed or not.
-        if let Some(activity) = self.activities.get_mut(&activity_type_id) {
-            activity.post_event(self.active_activity.as_mut(), event, &mut self.handle);
-        }
+        self.with_globals(|app| {
+            if let Some(activity) = app.activities.get_mut(&activity_type_id) {
+                activity.post_event(app.active_activity.as_mut(), event, &mut app.handle);
+            }
+        });
         if let Some(handler) = self.post_event.as_mut() {
             handler(event, &mut self.handle);
         }
@@ -136,11 +151,13 @@ impl Application {
                 Command::Push(new_activity) => {
                     self.pause_active();
                     let old_activity = std::mem::replace(&mut self.active_activity, new_activity);
-                    // Without a backstack there is nothing to return to, so the outgoing
-                    // activity is dropped rather than stashed.
-                    if let Some(backstack) = self.backstack.as_mut() {
-                        backstack.push(old_activity);
+                    match self.backstack.as_mut() {
+                        Some(backstack) => backstack.push(old_activity),
+                        // Without a backstack there is nothing to return to, so the
+                        // outgoing activity is finished rather than stashed.
+                        None => self.destroy(old_activity),
                     }
+                    self.create_active();
                     self.resume_active();
                 }
                 Command::Pop => {
@@ -148,7 +165,10 @@ impl Application {
                     match previous {
                         Some(previous) => {
                             self.pause_active();
-                            self.active_activity = previous;
+                            let finished = std::mem::replace(&mut self.active_activity, previous);
+                            self.destroy(finished);
+                            // No create_active: the restored instance already exists, so it
+                            // resumes rather than being created again.
                             self.resume_active();
                         }
                         None => {
@@ -159,7 +179,9 @@ impl Application {
                 }
                 Command::Replace(new_activity) => {
                     self.pause_active();
-                    self.active_activity = new_activity;
+                    let finished = std::mem::replace(&mut self.active_activity, new_activity);
+                    self.destroy(finished);
+                    self.create_active();
                     self.resume_active();
                 }
             }
@@ -170,17 +192,68 @@ impl Application {
         (self.active_activity.as_ref() as &dyn Any).type_id()
     }
 
+    /// Brackets one activity callback with the `#[global]` field check-out and check-in.
+    ///
+    /// Every callback gets its own window rather than one window around the whole of
+    /// `dispatch`, so anything running between two activity callbacks — the
+    /// application-level handler, most importantly — reads a coherent store.
+    fn with_globals<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
+        self.active_activity
+            .checkout_globals(&mut self.handle.store);
+        let result = f(self);
+        self.active_activity.checkin_globals(&mut self.handle.store);
+        result
+    }
+
+    /// Resolves `#[inject]` fields and runs `on_create` for a newly created instance.
+    ///
+    /// `on_create` is bracketed like any other callback, which is what lets it seed a
+    /// `#[global]` — writing `state.counter = 10` there reaches the store on check-in.
+    fn create_active(&mut self) {
+        self.active_activity.inject_services(&self.services);
+        self.with_globals(|app| {
+            let activity_type_id = app.active_activity_type_id();
+            if let Some(activity) = app.activities.get_mut(&activity_type_id) {
+                activity.on_create(app.active_activity.as_mut(), &mut app.handle);
+            }
+        });
+    }
+
     fn resume_active(&mut self) {
-        let activity_type_id = self.active_activity_type_id();
-        if let Some(activity) = self.activities.get_mut(&activity_type_id) {
-            activity.on_resume(self.active_activity.as_mut(), &mut self.handle);
-        }
+        self.with_globals(|app| {
+            let activity_type_id = app.active_activity_type_id();
+            if let Some(activity) = app.activities.get_mut(&activity_type_id) {
+                activity.on_resume(app.active_activity.as_mut(), &mut app.handle);
+            }
+        });
     }
 
     fn pause_active(&mut self) {
-        let activity_type_id = self.active_activity_type_id();
+        self.with_globals(|app| {
+            let activity_type_id = app.active_activity_type_id();
+            if let Some(activity) = app.activities.get_mut(&activity_type_id) {
+                activity.on_pause(app.active_activity.as_mut(), &mut app.handle);
+            }
+        });
+    }
+
+    fn destroy_active(&mut self) {
+        self.with_globals(|app| {
+            let activity_type_id = app.active_activity_type_id();
+            if let Some(activity) = app.activities.get_mut(&activity_type_id) {
+                activity.on_destroy(app.active_activity.as_mut(), &mut app.handle);
+            }
+        });
+    }
+
+    /// `on_destroy` for an instance that is no longer the active one — a replaced activity,
+    /// or a backstack entry being unwound at shutdown.
+    fn destroy(&mut self, mut state: Box<dyn ActivityState>) {
+        let activity_type_id = (state.as_ref() as &dyn Any).type_id();
+        state.checkout_globals(&mut self.handle.store);
         if let Some(activity) = self.activities.get_mut(&activity_type_id) {
-            activity.on_pause(self.active_activity.as_mut(), &mut self.handle);
+            activity.on_destroy(state.as_mut(), &mut self.handle);
         }
+        state.checkin_globals(&mut self.handle.store);
     }
 }

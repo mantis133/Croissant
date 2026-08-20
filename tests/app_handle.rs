@@ -7,11 +7,11 @@ use croissant::{
 };
 use futures::stream;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Home;
 impl ActivityState for Home {}
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Details;
 impl ActivityState for Details {}
 
@@ -36,7 +36,7 @@ async fn named_values_are_shared_between_activities() {
         .on_event(|_state: &mut Home, _event: &Ping, app| {
             *app.get_or_insert_with("counter", || 0u32) += 1;
             app.set("visited_home", true);
-            app.push(Details);
+            app.push::<Details>();
             EventHandlerReturn::Consumed
         })
         .build();
@@ -52,7 +52,7 @@ async fn named_values_are_shared_between_activities() {
     let mut app = Application::builder()
         .add_activity(home)
         .add_activity(details)
-        .starting_activity(Home)
+        .starting_activity::<Home>()
         .backstack()
         .add_event_producer(producer(vec![Box::new(Ping)]))
         .build();
@@ -86,7 +86,7 @@ async fn emitted_events_are_dispatched_before_the_next_producer_event() {
 
     let mut app = Application::builder()
         .add_activity(home)
-        .starting_activity(Home)
+        .starting_activity::<Home>()
         .add_event_producer(producer(vec![Box::new(Ping), Box::new(Ping)]))
         .build();
 
@@ -111,7 +111,7 @@ async fn push_and_pop_move_across_the_backstack() {
                 .push("home:pause");
         })
         .on_event(|_state: &mut Home, _event: &Ping, app| {
-            app.push(Details);
+            app.push::<Details>();
             EventHandlerReturn::Consumed
         })
         .build();
@@ -132,7 +132,7 @@ async fn push_and_pop_move_across_the_backstack() {
     let mut app = Application::builder()
         .add_activity(home)
         .add_activity(details)
-        .starting_activity(Home)
+        .starting_activity::<Home>()
         .backstack()
         .add_event_producer(producer(vec![Box::new(Ping)]))
         .build();
@@ -164,7 +164,7 @@ async fn exit_stops_the_loop_early() {
 
     let mut app = Application::builder()
         .add_activity(home)
-        .starting_activity(Home)
+        .starting_activity::<Home>()
         .add_event_producer(producer(vec![
             Box::new(Ping),
             Box::new(Ping),
@@ -199,7 +199,7 @@ async fn consumed_events_skip_the_application_handler() {
 
     let mut app = Application::builder()
         .add_activity(home)
-        .starting_activity(Home)
+        .starting_activity::<Home>()
         .on_event(|_event: &Ping, app| {
             *app.get_or_insert_with("reached_app_handler", || 0u32) += 1;
             EventHandlerReturn::Ignored
@@ -221,7 +221,7 @@ async fn wrong_type_reads_as_a_miss_and_take_removes() {
     let mut app = Application::builder()
         .value("port", 8080u16)
         .add_activity(ActivityBuilder::<Home>::new().build())
-        .starting_activity(Home)
+        .starting_activity::<Home>()
         .build();
 
     let handle = app.handle();

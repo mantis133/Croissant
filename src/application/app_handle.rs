@@ -19,7 +19,7 @@ use crate::{
 ///
 /// ```no_run
 /// # use croissant::{activities::ActivityBuilder, application::AppHandle, events::EventHandlerReturn};
-/// # #[derive(Debug)] struct Screen;
+/// # #[derive(Debug, Default)] struct Screen;
 /// # impl croissant::activities::ActivityState for Screen {}
 /// # #[derive(Debug)] struct Tick;
 /// # impl croissant::events::ApplicationEvent for Tick {}
@@ -120,12 +120,22 @@ impl AppHandle {
 
     // ---------------------------------------------------------------- navigation
 
-    /// Pauses the active activity and makes `activity` current.
+    /// Pauses the active activity and makes a new `A` current.
+    ///
+    /// The instance is default-constructed and its `on_create` runs before `on_resume`, so
+    /// `on_create` is where its fields get their real values — there is no need for an
+    /// `A::new()` that spells out every field.
     ///
     /// The outgoing activity is kept on the backstack if the application was built with
     /// [`ApplicationBuilder::backstack`](crate::application::ApplicationBuilder::backstack);
-    /// otherwise it is dropped.
-    pub fn push<A: ActivityState>(&mut self, activity: A) {
+    /// otherwise it is destroyed.
+    pub fn push<A: ActivityState + Default>(&mut self) {
+        self.push_with(A::default());
+    }
+
+    /// [`AppHandle::push`] with an instance you construct yourself, for states that are not
+    /// `Default` or that need a value passed straight in. `on_create` still runs.
+    pub fn push_with<A: ActivityState>(&mut self, activity: A) {
         self.commands.push_back(Command::Push(Box::new(activity)));
     }
 
@@ -136,8 +146,16 @@ impl AppHandle {
         self.commands.push_back(Command::Pop);
     }
 
-    /// Swaps the active activity for `activity` without touching the backstack.
-    pub fn replace<A: ActivityState>(&mut self, activity: A) {
+    /// Swaps the active activity for a new `A` without touching the backstack.
+    ///
+    /// The outgoing activity is destroyed. The incoming one is default-constructed and gets
+    /// `on_create` before `on_resume`.
+    pub fn replace<A: ActivityState + Default>(&mut self) {
+        self.replace_with(A::default());
+    }
+
+    /// [`AppHandle::replace`] with an instance you construct yourself.
+    pub fn replace_with<A: ActivityState>(&mut self, activity: A) {
         self.commands
             .push_back(Command::Replace(Box::new(activity)));
     }

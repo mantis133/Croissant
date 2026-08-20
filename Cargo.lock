@@ -33,12 +33,22 @@ dependencies = [
 name = "croissant"
 version = "0.1.0"
 dependencies = [
+ "croissant-macros",
  "crossterm",
  "futures",
  "tokio",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "croissant-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

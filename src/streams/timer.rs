@@ -11,7 +11,7 @@ use tokio::time::{self, Instant};
 /// ```no_run
 /// # use std::time::Duration;
 /// # use croissant::{activities::{ActivityBuilder, ActivityState}, application::Application, events::ApplicationEvent};
-/// # #[derive(Debug)] struct Home;
+/// # #[derive(Debug, Default)] struct Home;
 /// # impl ActivityState for Home {}
 /// #[derive(Debug)]
 /// struct TimerTick;
@@ -19,7 +19,7 @@ use tokio::time::{self, Instant};
 ///
 /// let app = Application::builder()
 ///     .add_activity(ActivityBuilder::<Home>::new().build())
-///     .starting_activity(Home)
+///     .starting_activity::<Home>()
 ///     .add_event_producer(croissant::streams::timer_event_stream(
 ///         Duration::from_secs(30),
 ///         |_instant| Some(Box::new(TimerTick) as Box<dyn ApplicationEvent>),
