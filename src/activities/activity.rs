@@ -1,7 +1,8 @@
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 
-use super::{ActivityState, any_activity::AnyActivity};
+use super::any_activity::AnyActivity;
+use crate::ManagedState;
 use crate::{
     application::AppHandle,
     events::{ApplicationEvent, EventHandlerReturn},
@@ -20,7 +21,7 @@ pub(super) type PostEventHandler<State> =
 /// [`AppHandle`] for everything shared with the rest of the application.
 pub struct Activity<State>
 where
-    State: ActivityState,
+    State: ManagedState,
 {
     pub(super) on_create: Option<LifecycleHandler<State>>,
     pub(super) on_resume: Option<LifecycleHandler<State>>,
@@ -30,35 +31,35 @@ where
     pub(super) post_event: Option<PostEventHandler<State>>,
 }
 
-impl<State: ActivityState> Activity<State> {
+impl<State: ManagedState> Activity<State> {
     /// Downcasts the erased state back to the type this activity was built for.
-    fn downcast(state: &mut dyn ActivityState) -> &mut State {
+    fn downcast(state: &mut dyn ManagedState) -> &mut State {
         (state as &mut dyn Any)
             .downcast_mut::<State>()
             .expect("activity was invoked with state of a different type")
     }
 }
 
-impl<State: ActivityState> AnyActivity for Activity<State> {
-    fn on_create(&mut self, state: &mut dyn ActivityState, app: &mut AppHandle) {
+impl<State: ManagedState> AnyActivity for Activity<State> {
+    fn on_create(&mut self, state: &mut dyn ManagedState, app: &mut AppHandle) {
         if let Some(ref mut f) = self.on_create {
             f(Self::downcast(state), app);
         }
     }
 
-    fn on_resume(&mut self, state: &mut dyn ActivityState, app: &mut AppHandle) {
+    fn on_resume(&mut self, state: &mut dyn ManagedState, app: &mut AppHandle) {
         if let Some(ref mut f) = self.on_resume {
             f(Self::downcast(state), app);
         }
     }
 
-    fn on_pause(&mut self, state: &mut dyn ActivityState, app: &mut AppHandle) {
+    fn on_pause(&mut self, state: &mut dyn ManagedState, app: &mut AppHandle) {
         if let Some(ref mut f) = self.on_pause {
             f(Self::downcast(state), app);
         }
     }
 
-    fn on_destroy(&mut self, state: &mut dyn ActivityState, app: &mut AppHandle) {
+    fn on_destroy(&mut self, state: &mut dyn ManagedState, app: &mut AppHandle) {
         if let Some(ref mut f) = self.on_destroy {
             f(Self::downcast(state), app);
         }
@@ -66,7 +67,7 @@ impl<State: ActivityState> AnyActivity for Activity<State> {
 
     fn handle_event(
         &mut self,
-        state: &mut dyn ActivityState,
+        state: &mut dyn ManagedState,
         event: &dyn ApplicationEvent,
         app: &mut AppHandle,
     ) -> EventHandlerReturn {
@@ -79,7 +80,7 @@ impl<State: ActivityState> AnyActivity for Activity<State> {
 
     fn post_event(
         &mut self,
-        state: &mut dyn ActivityState,
+        state: &mut dyn ManagedState,
         event: &dyn ApplicationEvent,
         app: &mut AppHandle,
     ) {

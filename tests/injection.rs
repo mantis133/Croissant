@@ -1,14 +1,15 @@
 //! Runtime behaviour of `#[global]` field check-out/check-in and `#[inject]` service
-//! resolution, written against hand-rolled `ActivityState` impls.
+//! resolution, written against hand-rolled `ManagedState` impls.
 //!
-//! These are the impls `#[derive(ActivityState)]` generates. Testing them directly keeps the
+//! These are the impls `#[derive(ManagedState)]` generates. Testing them directly keeps the
 //! runtime contract pinned independently of the macro, and keeps the hand-written path —
 //! which stays supported — covered.
 
 use std::sync::Arc;
 
 use croissant::{
-    activities::{ActivityBuilder, ActivityState},
+    ManagedState,
+    activities::ActivityBuilder,
     application::{AppHandle, Application, Injected, ServiceRegistry, ValueStore},
     events::{ApplicationEvent, EventHandlerReturn},
 };
@@ -33,7 +34,7 @@ struct Adder {
     local_hits: usize,
 }
 
-impl ActivityState for Adder {
+impl ManagedState for Adder {
     fn checkout_globals(&mut self, store: &mut ValueStore) {
         store.checkout_field("counter", &mut self.counter);
     }
@@ -48,7 +49,7 @@ struct Doubler {
     counter: u32,
 }
 
-impl ActivityState for Doubler {
+impl ManagedState for Doubler {
     fn checkout_globals(&mut self, store: &mut ValueStore) {
         store.checkout_field("counter", &mut self.counter);
     }
@@ -166,7 +167,7 @@ struct Banner {
     app_name: String,
 }
 
-impl ActivityState for Banner {
+impl ManagedState for Banner {
     fn checkout_globals(&mut self, store: &mut ValueStore) {
         store.clone_field("app_name", &mut self.app_name);
     }
@@ -243,7 +244,7 @@ struct Front {
     loud: Injected<dyn Greeter>,
 }
 
-impl ActivityState for Front {
+impl ManagedState for Front {
     fn inject_services(&mut self, services: &ServiceRegistry) {
         self.greeter = services.resolve(None);
         self.loud = services.resolve(Some("loud"));
@@ -319,11 +320,11 @@ fn dereferencing_an_unresolved_service_panics() {
 
 #[derive(Debug, Default)]
 struct Root;
-impl ActivityState for Root {}
+impl ManagedState for Root {}
 
 #[derive(Debug, Default)]
 struct Leaf;
-impl ActivityState for Leaf {}
+impl ManagedState for Leaf {}
 
 fn trail(app: &mut AppHandle, entry: &'static str) {
     app.get_or_insert_with("trail", Vec::<&'static str>::new)

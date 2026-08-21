@@ -1,11 +1,11 @@
-use crate::activities::ActivityState;
+use crate::ManagedState;
 
 /// An action an activity asked the application to take, queued until the current
 /// callback returns so that handlers never need to borrow the application itself.
 pub(crate) enum Command {
-    Push(Box<dyn ActivityState>),
+    Push(Box<dyn ManagedState>),
     Pop,
-    Replace(Box<dyn ActivityState>),
+    Replace(Box<dyn ManagedState>),
     Exit,
 }
 

@@ -10,9 +10,9 @@ use tokio::time::{self, Instant};
 ///
 /// ```no_run
 /// # use std::time::Duration;
-/// # use croissant::{activities::{ActivityBuilder, ActivityState}, application::Application, events::ApplicationEvent};
+/// # use croissant::{activities::ActivityBuilder, ManagedState, application::Application, events::ApplicationEvent};
 /// # #[derive(Debug, Default)] struct Home;
-/// # impl ActivityState for Home {}
+/// # impl ManagedState for Home {}
 /// #[derive(Debug)]
 /// struct TimerTick;
 /// impl ApplicationEvent for TimerTick {}

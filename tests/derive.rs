@@ -1,10 +1,11 @@
-//! The `#[derive(ActivityState)]` path: the same runtime contract as `tests/injection.rs`,
+//! The `#[derive(ManagedState)]` path: the same runtime contract as `tests/injection.rs`,
 //! but reached through the attributes rather than hand-written impls.
 
 use std::sync::Arc;
 
 use croissant::{
-    activities::{ActivityBuilder, ActivityState},
+    ManagedState,
+    activities::ActivityBuilder,
     application::{AppHandle, Application, Injected},
     events::{ApplicationEvent, EventHandlerReturn},
 };
@@ -38,7 +39,7 @@ impl UserRepo for Cache {
     }
 }
 
-#[derive(Debug, Default, ActivityState)]
+#[derive(Debug, Default, ManagedState)]
 struct Dashboard {
     #[global]
     counter: u32,
@@ -54,7 +55,7 @@ struct Dashboard {
 }
 
 /// A second activity sharing `counter` by declaring the same field name.
-#[derive(Debug, Default, ActivityState)]
+#[derive(Debug, Default, ManagedState)]
 struct Sidebar {
     #[global]
     counter: u32,
@@ -158,7 +159,7 @@ async fn the_same_field_name_is_the_same_global_across_activities() {
     assert_eq!(app.values().get::<u32>("counter"), Some(&15), "(0 + 5) * 3");
 }
 
-#[derive(Debug, Default, ActivityState)]
+#[derive(Debug, Default, ManagedState)]
 struct Probe {
     #[global]
     counter: u32,
@@ -205,7 +206,7 @@ async fn a_checked_out_global_reads_as_default_by_name() {
 }
 
 /// A struct with no attributes still derives fine — it just gets the trait's no-op defaults.
-#[derive(Debug, Default, ActivityState)]
+#[derive(Debug, Default, ManagedState)]
 struct Plain {
     local: usize,
 }
@@ -234,7 +235,7 @@ async fn a_state_with_no_attributes_derives_to_no_ops() {
 }
 
 /// Generic states work: the impl generics are passed through.
-#[derive(Debug, Default, ActivityState)]
+#[derive(Debug, Default, ManagedState)]
 struct Generic<T: std::fmt::Debug + Send + Default + 'static> {
     #[global("generic.value")]
     value: u32,

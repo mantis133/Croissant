@@ -1,7 +1,8 @@
 //! End-to-end checks that an activity can reach the application through its `AppHandle`.
 
 use croissant::{
-    activities::{ActivityBuilder, ActivityState},
+    ManagedState,
+    activities::ActivityBuilder,
     application::Application,
     events::{ApplicationEvent, EventHandlerReturn},
 };
@@ -9,11 +10,11 @@ use futures::stream;
 
 #[derive(Debug, Default)]
 struct Home;
-impl ActivityState for Home {}
+impl ManagedState for Home {}
 
 #[derive(Debug, Default)]
 struct Details;
-impl ActivityState for Details {}
+impl ManagedState for Details {}
 
 #[derive(Debug)]
 struct Ping;

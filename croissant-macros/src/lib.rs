@@ -1,4 +1,4 @@
-//! Derive macro for `croissant::activities::ActivityState`.
+//! Derive macro for `croissant::activities::ManagedState`.
 //!
 //! See the re-export in the `croissant` crate for the user-facing documentation.
 
@@ -12,11 +12,11 @@ use syn::{
     spanned::Spanned,
 };
 
-/// Derives `ActivityState`, wiring up `#[global]` and `#[inject]` fields.
+/// Derives `ManagedState`, wiring up `#[global]` and `#[inject]` fields.
 ///
 /// `global` and `inject` are inert helper attributes: the compiler ignores them, so the
 /// fields they mark stay ordinary fields of ordinary types.
-#[proc_macro_derive(ActivityState, attributes(global, inject))]
+#[proc_macro_derive(ManagedState, attributes(global, inject))]
 pub fn derive_activity_state(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     match expand(input) {
@@ -93,7 +93,7 @@ fn expand(input: DeriveInput) -> syn::Result<TokenStream2> {
     });
 
     Ok(quote! {
-        impl #impl_generics ::croissant::activities::ActivityState
+        impl #impl_generics ::croissant::ManagedState
             for #name #ty_generics #where_clause
         {
             #inject_services
@@ -120,13 +120,13 @@ fn collect_fields(input: &DeriveInput) -> syn::Result<Vec<BoundField>> {
         Data::Enum(_) => {
             return Err(syn::Error::new(
                 input.ident.span(),
-                "ActivityState cannot be derived for an enum; activity state must be a struct",
+                "ManagedState cannot be derived for an enum; activity state must be a struct",
             ));
         }
         Data::Union(_) => {
             return Err(syn::Error::new(
                 input.ident.span(),
-                "ActivityState cannot be derived for a union; activity state must be a struct",
+                "ManagedState cannot be derived for a union; activity state must be a struct",
             ));
         }
     };

@@ -9,22 +9,23 @@ use tracing::{Level, info};
 use tracing_subscriber::fmt;
 
 use crate::{
-    EventStream,
-    activities::{Activity, ActivityState, AnyActivity},
+    EventStream, ManagedState,
+    activities::{Activity, AnyActivity},
     application::{
-        AppHandle, Application, ServiceRegistry,
+        AppHandle, Application, Emitter, ServiceRegistry,
         application::{AppEventHandler, AppPostEventHandler},
         value_store::ValueStore,
     },
     events::{ApplicationEvent, EventHandlerReturn},
+    tasks::{Task, TaskEntry},
 };
 
 /// Fluent builder for an [`Application`].
 ///
 /// ```no_run
-/// # use croissant::{activities::{ActivityBuilder, ActivityState}, application::Application};
+/// # use croissant::{ManagedState, activities::ActivityBuilder, application::Application};
 /// # #[derive(Debug, Default)] struct Home;
-/// # impl ActivityState for Home {}
+/// # impl ManagedState for Home {}
 /// let app = Application::builder()
 ///     .value("counter", 0u32)
 ///     .add_activity(ActivityBuilder::<Home>::new().build())
@@ -35,11 +36,12 @@ use crate::{
 pub struct ApplicationBuilder {
     pub(super) store: ValueStore,
     pub(super) services: ServiceRegistry,
-    pub(super) starting_activity: Option<Box<dyn ActivityState>>,
+    pub(super) starting_activity: Option<Box<dyn ManagedState>>,
     pub(super) activities: HashMap<TypeId, Box<dyn AnyActivity>>,
     pub(super) event_handlers: HashMap<TypeId, AppEventHandler>,
     pub(super) event_producers: Vec<EventStream<Box<dyn ApplicationEvent>>>,
     pub(super) post_event: Option<AppPostEventHandler>,
+    pub(super) tasks_registry: Vec<TaskEntry>,
     pub(super) has_backstack: bool,
     pub(super) log_file: Option<String>,
 }
@@ -54,6 +56,7 @@ impl ApplicationBuilder {
             event_handlers: HashMap::new(),
             event_producers: Vec::new(),
             post_event: None,
+            tasks_registry: Vec::new(),
             has_backstack: false,
             log_file: None,
         }
@@ -65,9 +68,21 @@ impl ApplicationBuilder {
         self
     }
 
-    pub fn add_activity<A: ActivityState>(mut self, activity: Activity<A>) -> Self {
+    pub fn add_activity<A: ManagedState>(mut self, activity: Activity<A>) -> Self {
         self.activities
             .insert(TypeId::of::<A>(), Box::new(activity));
+        self
+    }
+
+    /// Registers an always-active [`Task`]: a stateful handler with no screen, which sees
+    /// events whichever activity is in front.
+    ///
+    /// Its state is `Default`-constructed at start-up. Registration order is dispatch order.
+    pub fn add_task<S: ManagedState + Default>(mut self, task: Task<S>) -> Self {
+        self.tasks_registry.push(TaskEntry {
+            handlers: Box::new(task),
+            state: Box::new(S::default()),
+        });
         self
     }
 
@@ -115,12 +130,12 @@ impl ApplicationBuilder {
 
     /// Sets the activity the application opens on. It is default-constructed and receives
     /// `on_create` before `on_resume`.
-    pub fn starting_activity<A: ActivityState + Default>(self) -> Self {
+    pub fn starting_activity<A: ManagedState + Default>(self) -> Self {
         self.starting_activity_with(A::default())
     }
 
     /// [`ApplicationBuilder::starting_activity`] with an instance you construct yourself.
-    pub fn starting_activity_with<A: ActivityState>(mut self, activity: A) -> Self {
+    pub fn starting_activity_with<A: ManagedState>(mut self, activity: A) -> Self {
         self.starting_activity = Some(Box::new(activity));
         self
     }
@@ -133,9 +148,9 @@ impl ApplicationBuilder {
     ///
     /// ```
     /// # use std::sync::Arc;
-    /// # use croissant::{activities::{ActivityBuilder, ActivityState}, application::Application};
+    /// # use croissant::{ManagedState, activities::ActivityBuilder, application::Application};
     /// # #[derive(Debug, Default)] struct Home;
-    /// # impl ActivityState for Home {}
+    /// # impl ManagedState for Home {}
     /// trait Clock: Send + Sync {
     ///     fn now(&self) -> u64;
     /// }
@@ -197,9 +212,16 @@ impl ApplicationBuilder {
             info!("Logging initialized.");
         }
 
+        // The loop reads `task_events`; the sender lives inside the handle, cloned out as
+        // an `Emitter` whenever a callback spawns background work.
+        let (event_tx, task_events) = tokio::sync::mpsc::unbounded_channel();
+
         Application {
-            handle: AppHandle::new(self.store),
+            handle: AppHandle::new(self.store, Emitter::new(event_tx)),
             services: self.services,
+            tasks: tokio::task::JoinSet::new(),
+            tasks_registry: self.tasks_registry,
+            task_events,
             active_activity: starting_activity,
             activities: self.activities,
             events: futures::stream::select_all(self.event_producers),

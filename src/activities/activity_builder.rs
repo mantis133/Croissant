@@ -2,8 +2,9 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 
 use crate::{
+    ManagedState,
     activities::{
-        Activity, ActivityState,
+        Activity,
         activity::{EventHandler, LifecycleHandler, PostEventHandler},
     },
     application::AppHandle,
@@ -16,10 +17,10 @@ use crate::{
 /// reaches the application's named values, emits events, and navigates.
 ///
 /// ```no_run
-/// # use croissant::{activities::{ActivityBuilder, ActivityState}, application::AppHandle, events::{ApplicationEvent, EventHandlerReturn}};
+/// # use croissant::{ManagedState, activities::ActivityBuilder, application::AppHandle, events::{ApplicationEvent, EventHandlerReturn}};
 /// #[derive(Debug, Default)]
 /// struct Menu { cursor: usize }
-/// impl ActivityState for Menu {}
+/// impl ManagedState for Menu {}
 ///
 /// #[derive(Debug)]
 /// struct Down;
@@ -38,7 +39,7 @@ use crate::{
 /// ```
 pub struct ActivityBuilder<State>
 where
-    State: ActivityState,
+    State: ManagedState,
 {
     on_create: Option<LifecycleHandler<State>>,
     on_resume: Option<LifecycleHandler<State>>,
@@ -50,7 +51,7 @@ where
 
 impl<State> ActivityBuilder<State>
 where
-    State: ActivityState,
+    State: ManagedState,
 {
     pub fn new() -> Self {
         ActivityBuilder {
@@ -137,7 +138,7 @@ where
 
 impl<State> Default for ActivityBuilder<State>
 where
-    State: ActivityState,
+    State: ManagedState,
 {
     fn default() -> Self {
         Self::new()
