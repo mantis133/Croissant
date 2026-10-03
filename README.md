@@ -91,7 +91,6 @@ tokio = { version = "1", features = ["full"] }
 | --- | --- | --- |
 | `derive` | ✅ | `#[derive(ManagedState)]` and its `#[global]` / `#[inject]` attributes |
 | `crossterm` | | `crossterm_event_stream` for terminal input |
-| `logging` | | `tracing` integration — currently incomplete, see the docs |
 | `watch` | | `file_event_stream` / `directory_event_stream` for reacting to file changes |
 
 ## Documentation
@@ -111,8 +110,6 @@ then read the guide you need:
 
 Pre-1.0 and the API still moves. Known gaps, so you do not find them the hard way:
 
-- **Logging is incomplete** — `log_file` ignores its level and directory arguments and drops
-  the appender guard, so output is unreliable.
 - **Argument and config-file parsing are deliberately out of scope** — use `clap` and
   `config`/`figment`, and hand the result over with `.service(..)`. The framework-shaped half
   of config, noticing a file change, is the `watch` feature.
@@ -122,9 +119,8 @@ Pre-1.0 and the API still moves. Known gaps, so you do not find them the hard wa
 
 ## Minimum supported Rust version
 
-**Rust 1.88**, verified against the toolchain. The crate uses let-chains in edition 2024, and
-the `logging` feature pulls in dependencies with the same floor. The MSRV is not yet pinned
-in CI and may rise before 1.0.
+**Rust 1.88**, verified against the toolchain. The crate uses let-chains in edition 2024. The
+MSRV is not yet pinned in CI and may rise before 1.0.
 
 ## Development
 

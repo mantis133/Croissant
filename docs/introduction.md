@@ -140,7 +140,6 @@ See [tasks.md](tasks.md).
 | --- | --- | --- |
 | `derive` | yes | `#[derive(ManagedState)]` and its `#[global]`/`#[inject]` attributes |
 | `crossterm` | no | `crossterm_event_stream` for terminal input |
-| `logging` | no | `tracing` integration — see the caveat in [application.md](application.md) |
 | `watch` | no | File-change event producers — see [events.md](events.md#built-in-producers) |
 
 ## Status
@@ -148,9 +147,6 @@ See [tasks.md](tasks.md).
 Croissant is pre-1.0 and the API still moves. Known gaps, so you do not discover them the
 hard way:
 
-- **Logging is incomplete.** `ApplicationBuilder::log_file` ignores its level and directory
-  arguments and drops the appender guard, so output is unreliable. Details in
-  [application.md](application.md).
 - **Argument and config-file parsing are deliberately out of scope** — use `clap` and
   `config`/`figment`, and hand the result over with `.service(..)`. The framework-shaped half
   of config, noticing a file change, is the `watch` feature.

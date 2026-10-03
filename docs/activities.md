@@ -151,7 +151,7 @@ pop()           Details.on_pause → Details.on_destroy → Home.on_resume
 `replace` never touches the backstack: the outgoing activity is destroyed and the new one
 takes its slot, leaving whatever was underneath alone.
 
-`pop()` on an empty or disabled backstack is a no-op, logged under the `logging` feature.
+`pop()` on an empty or disabled backstack is a no-op.
 
 ### Passing data to the next screen
 

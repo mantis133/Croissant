@@ -144,26 +144,6 @@ app.push::<Details>();
 // still on the current activity right here — Details takes over after this callback returns
 ```
 
-## Logging
-
-> **This feature is incomplete.** Enable it if you want, but do not rely on it yet.
-
-With the `logging` feature on, `ApplicationBuilder::log_file` is available:
-
-```rust
-.log_file(Level::INFO, "./logs", "app.log")
-```
-
-Three things are wrong with it today, all tracked under "fix logging" in `TODO.md`:
-
-- the `log_level` argument is ignored — the subscriber is hard-coded to `INFO`;
-- the `directory_path` argument is ignored — output always goes to `./logs`;
-- the `tracing_appender` worker guard is dropped at the end of `build()`, which shuts the
-  background writer down, so lines can be lost.
-
-The framework's own `info!` calls (dispatch results, applied navigation commands, background
-tasks ending abnormally) are all behind this same feature.
-
 ## See also
 
 - [activities.md](activities.md) — what the lifecycle callbacks mean

@@ -4,9 +4,6 @@ use std::collections::HashMap;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::task::JoinSet;
 
-#[cfg(feature = "logging")]
-use tracing::info;
-
 use crate::{
     EventStream, ManagedState,
     activities::AnyActivity,
@@ -169,8 +166,6 @@ impl Application {
                         Err(error) => {
                             // A panicking background task is reported, not fatal: the rest of
                             // the application has no reason to come down with it.
-                            #[cfg(feature = "logging")]
-                            info!("background task ended abnormally: {error}");
                             let outcome = if error.is_panic() {
                                 JobOutcome::Panicked
                             } else {
@@ -250,8 +245,6 @@ impl Application {
                 return false;
             };
             let ret = activity.handle_event(app.active_activity.as_mut(), event, &mut app.handle);
-            #[cfg(feature = "logging")]
-            info!("activity event handler returned {ret:?}");
             ret.is_consumed()
         });
 
@@ -283,8 +276,6 @@ impl Application {
             // gate. It is kept for symmetry with activity handlers, and for the
             // background-task stage that will slot in ahead of it.
             let _ret = handler(event, &mut self.handle);
-            #[cfg(feature = "logging")]
-            info!("application event handler returned {_ret:?}");
         }
 
         // Post-event hooks see every event, consumed or not.
@@ -349,8 +340,6 @@ impl Application {
     /// that running earlier commands triggered.
     fn drain_commands(&mut self) {
         while let Some(command) = self.handle.commands.pop_front() {
-            #[cfg(feature = "logging")]
-            info!("applying {command:?}");
             match command {
                 Command::Exit => {
                     self.handle.exiting = true;
@@ -373,20 +362,15 @@ impl Application {
                     self.resume_active();
                 }
                 Command::Pop => {
-                    let previous = self.backstack.as_mut().and_then(Vec::pop);
-                    match previous {
-                        Some(previous) => {
-                            self.pause_active();
-                            let finished = std::mem::replace(&mut self.active_activity, previous);
-                            self.destroy(finished);
-                            // No create_active: the restored instance already exists, so it
-                            // resumes rather than being created again.
-                            self.resume_active();
-                        }
-                        None => {
-                            #[cfg(feature = "logging")]
-                            info!("pop ignored: backstack is disabled or empty");
-                        }
+                    // Without a backstack, or with an empty one, there is nothing to return
+                    // to, so the pop is ignored.
+                    if let Some(previous) = self.backstack.as_mut().and_then(Vec::pop) {
+                        self.pause_active();
+                        let finished = std::mem::replace(&mut self.active_activity, previous);
+                        self.destroy(finished);
+                        // No create_active: the restored instance already exists, so it
+                        // resumes rather than being created again.
+                        self.resume_active();
                     }
                 }
                 Command::Replace(new_activity) => {

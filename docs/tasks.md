@@ -166,9 +166,9 @@ event producers dried up meanwhile.
 > listening belongs in an [event producer](events.md#event-producers). Otherwise end the
 > application with `exit()`, which aborts whatever is still running.
 
-A spawned future that panics is reported as `JobEnded { outcome: Panicked }` — and logged,
-under the `logging` feature — and the loop carries on. Its siblings keep running; there is no
-reason for the rest of the application to come down too.
+A spawned future that panics is reported as `JobEnded { outcome: Panicked }`, and the loop
+carries on. Its siblings keep running; there is no reason for the rest of the application to
+come down too.
 
 ### Cancellation
 

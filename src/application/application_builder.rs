@@ -3,10 +3,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use futures::Stream;
-#[cfg(feature = "logging")]
-use tracing::{Level, info};
-#[cfg(feature = "logging")]
-use tracing_subscriber::fmt;
 
 use crate::{
     EventStream, ManagedState,
@@ -43,7 +39,6 @@ pub struct ApplicationBuilder {
     pub(super) post_event: Option<AppPostEventHandler>,
     pub(super) tasks_registry: Vec<TaskEntry>,
     pub(super) has_backstack: bool,
-    pub(super) log_file: Option<String>,
 }
 
 impl ApplicationBuilder {
@@ -58,7 +53,6 @@ impl ApplicationBuilder {
             post_event: None,
             tasks_registry: Vec::new(),
             has_backstack: false,
-            log_file: None,
         }
     }
 
@@ -181,12 +175,6 @@ impl ApplicationBuilder {
         self
     }
 
-    #[cfg(feature = "logging")]
-    pub fn log_file(mut self, _log_level: Level, _directory_path: &str, file_path: &str) -> Self {
-        self.log_file = Some(file_path.to_string());
-        self
-    }
-
     /// # Panics
     ///
     /// Panics if no starting activity was set.
@@ -194,23 +182,6 @@ impl ApplicationBuilder {
         let Some(starting_activity) = self.starting_activity else {
             panic!("Starting activity must be set before building the application.");
         };
-
-        #[cfg(feature = "logging")]
-        if let Some(log_file) = self.log_file {
-            let file_appender = tracing_appender::rolling::never("./logs", log_file);
-            let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-
-            let subscriber = fmt()
-                .with_writer(non_blocking)
-                .with_max_level(Level::INFO)
-                .with_target(false)
-                .finish();
-
-            tracing::subscriber::set_global_default(subscriber)
-                .expect("setting default subscriber failed");
-
-            info!("Logging initialized.");
-        }
 
         // The loop reads `task_events`; the sender lives inside the handle, cloned out as
         // an `Emitter` whenever a callback spawns background work.

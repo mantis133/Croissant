@@ -1,7 +1,5 @@
 #[cfg(feature = "crossterm")]
 pub mod crossterm;
-#[cfg(feature = "logging")]
-pub mod logging;
 pub mod application;
 pub mod activities;
 pub mod events;
