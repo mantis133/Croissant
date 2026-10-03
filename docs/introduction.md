@@ -87,7 +87,8 @@ active activity  →  tasks  →  application handler
 ```
 
 Croissant ships producers for terminal input, timers, and file changes; anything else is a
-stream you write. See [events.md](events.md).
+stream you write — see [writing your own producer](events.md#writing-your-own-producer), and
+[events.md](events.md) for the rest.
 
 ### Dependency injection
 
